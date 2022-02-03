@@ -15,7 +15,7 @@
  */
 
 metadata {
-	definition(name: "ZigBee Multi Switch Power", namespace: "smartthings", author: "SmartThings", ocfDeviceType: "oic.d.smartplug", mnmn: "SmartThings", vid: "generic-switch-power") {
+	definition(name: "Modified ZigBee Multi Switch Power", namespace: "smartthings", author: "darrylong", ocfDeviceType: "oic.d.smartplug", mnmn: "SmartThings", vid: "generic-switch-power") {
 		capability "Actuator"
 		capability "Configuration"
 		capability "Refresh"
@@ -46,7 +46,7 @@ metadata {
 		}
 
 		main "switch"
-		details(["switch", "refresh", "power"])
+		details(["switch", "refresh"])
 	}
 }
 
@@ -68,13 +68,31 @@ def parse(String description) {
 
 	if (eventMap) {
 		if (eventDescMap?.sourceEndpoint == "01" || eventDescMap?.endpoint == "01") {
-			sendEvent(eventMap)
+			if (eventMap.name == "power") {
+				def powerValue
+				def div = device.getDataValue("divisor")
+				div = div ? (div as int) : 10
+				powerValue = (eventMap.value as Integer)/div
+				sendEvent(name: "power", value: powerValue)
+			}
+			else {
+				sendEvent(eventMap)
+			}
 		} else {
 			def childDevice = childDevices.find {
 				it.deviceNetworkId == "$device.deviceNetworkId:${eventDescMap.sourceEndpoint}" || it.deviceNetworkId == "$device.deviceNetworkId:${eventDescMap.endpoint}"
 			}
 			if (childDevice) {
-				childDevice.sendEvent(eventMap)
+				if (eventMap.name == "power") {
+					def powerValue
+					def div = device.getDataValue("divisor")
+					div = div ? (div as int) : 10
+					powerValue = (eventMap.value as Integer)/div
+					childDevice.sendEvent(name: "power", value: powerValue)
+				}
+				else {
+					childDevice.sendEvent(eventMap)
+				}
 			} else {
 				log.debug "Child device: $device.deviceNetworkId:${eventDescMap.sourceEndpoint} was not found"
 			}
@@ -83,7 +101,7 @@ def parse(String description) {
 }
 
 private void createChildDevices() {
-	def numberOfChildDevices = modelNumberOfChildDevices[device.getDataValue("model")]
+	def numberOfChildDevices = getChildCount()
 	log.debug("createChildDevices(), numberOfChildDevices: ${numberOfChildDevices}")
 
 	for(def endpoint : 2..numberOfChildDevices) {
@@ -126,8 +144,8 @@ def ping() {
 }
 
 def refresh() {
-	def refreshCommands = zigbee.onOffRefresh() + zigbee.electricMeasurementPowerRefresh()
-	def numberOfChildDevices = modelNumberOfChildDevices[device.getDataValue("model")]
+	def refreshCommands = zigbee.onOffRefresh() + zigbee.simpleMeteringPowerRefresh() + zigbee.electricMeasurementPowerRefresh()
+	def numberOfChildDevices = getChildCount()
 	for(def endpoint : 2..numberOfChildDevices) {
 		refreshCommands += zigbee.readAttribute(zigbee.ONOFF_CLUSTER, 0x0000, [destEndpoint: endpoint])
 		refreshCommands += zigbee.readAttribute(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, 0x050B, [destEndpoint: endpoint])
@@ -139,7 +157,7 @@ def refresh() {
 def configure() {
 	log.debug "configure"
 	configureHealthCheck()
-	def numberOfChildDevices = modelNumberOfChildDevices[device.getDataValue("model")]
+	def numberOfChildDevices = getChildCount()
 	def configurationCommands = zigbee.onOffConfig(0, 120) + zigbee.electricMeasurementPowerConfig()
 	for(def endpoint : 2..numberOfChildDevices) {
 		configurationCommands += zigbee.configureReporting(zigbee.ONOFF_CLUSTER, 0x0000, 0x10, 0, 120, null, [destEndpoint: endpoint])
@@ -164,8 +182,50 @@ private getChildEndpoint(String dni) {
 	dni.split(":")[-1] as Integer
 }
 
-private getModelNumberOfChildDevices() {
-	[
-		"DoubleSocket50AU" : 2
-	]
+private getChildCount() {
+	switch (device.getDataValue("model")) {
+		case "9f76c9f31b4c4a499e3aca0977ac4494":
+		case "HY0003":
+		case "HY0097":
+		case "HS2SW3L-EFR-3.0":
+		case "E220-KR3N0Z0-HA":
+		case "E220-KR3N0Z1-HA":
+		case "E220-KR3N0Z2-HA":
+		case "ZB-SW03":
+		case "JZ-ZB-003":
+		case "PM-S340-ZB":
+		case "PM-S340R-ZB":
+		case "PM-S350-ZB":
+		case "ST-S350-ZB":
+		case "SBM300Z3":
+		case "HS6SW3A-W-EF-3.0":
+			return 3
+		case "E220-KR4N0Z0-HA":
+		case "E220-KR4N0Z1-HA":
+		case "E220-KR4N0Z2-HA":
+		case "ZB-SW04":
+		case "JZ-ZB-004":
+		case "SBM300Z4":
+			return 4
+		case "E220-KR5N0Z0-HA":
+		case "E220-KR5N0Z1-HA":
+		case "E220-KR5N0Z2-HA":
+		case "ZB-SW05":
+		case "JZ-ZB-005":
+		case "SBM300Z5":
+			return 5
+		case "E220-KR6N0Z0-HA":
+		case "E220-KR6N0Z1-HA":
+		case "E220-KR6N0Z2-HA":
+		case "ZB-SW06":
+		case "JZ-ZB-006":
+		case "SBM300Z6":
+			return 6
+		case "E220-KR2N0Z0-HA":
+		case "E220-KR2N0Z1-HA":
+		case "E220-KR2N0Z2-HA":
+		case "SBM300Z2":
+		default:
+			return 2
+	}
 }
